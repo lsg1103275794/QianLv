@@ -571,10 +571,10 @@ A: 检查：1) API密钥是否正确 2) 网络连接是否正常 3) Serper API�
 
 ## 联系方式
 
-- **项目维护者**：[Your Name]
-- **邮箱**：[your.email@example.com]
-- **问题反馈**：[GitHub Issues](https://github.com/your-repo/issues)
-- **讨论交流**：[GitHub Discussions](https://github.com/your-repo/discussions)
+- **项目维护者**：lsg1103275794
+- **邮箱**：lsg1103275794@qq.com
+- **问题反馈**：[GitHub Issues](https://github.com/lsg1103275794/QianLu/issues)
+- **讨论交流**：[GitHub Discussions](https://github.com/lsg1103275794/QianLu/discussions)
 
 ---
 
