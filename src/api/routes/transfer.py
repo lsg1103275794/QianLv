@@ -24,13 +24,6 @@ import re # Import re for potential splitting
 # --- Template Loading ---
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "config" / "prompt_templates"
 
-# 模板中文名称映射
-TEMPLATE_DISPLAY_NAMES = {
-    "creative_style_extraction": "深度创作风格提取",
-    "quick_style_extraction": "快速风格提取",
-    "news_style_extraction": "新闻风格提取"
-}
-
 def load_style_extraction_template(template_name: str = "creative_style_extraction") -> Optional[Dict[str, Any]]:
     """Load style extraction template from YAML file."""
     template_path = TEMPLATE_DIR / f"{template_name}.yaml"
@@ -46,28 +39,6 @@ def load_style_extraction_template(template_name: str = "creative_style_extracti
     except Exception as e:
         logger.error(f"Error loading style extraction template {template_name}: {e}")
         return None
-
-def get_available_templates() -> list:
-    """Get list of available style extraction templates with metadata."""
-    templates = []
-    for template_file in TEMPLATE_DIR.glob("*_style_extraction.yaml"):
-        template_name = template_file.stem
-        try:
-            with open(template_file, 'r', encoding='utf-8') as f:
-                template_data = yaml.safe_load(f)
-            
-            meta = template_data.get('meta', {})
-            templates.append({
-                'name': template_name,
-                'display_name': TEMPLATE_DISPLAY_NAMES.get(template_name, meta.get('name', template_name)),
-                'description': meta.get('description', ''),
-                'tags': meta.get('tags', []),
-                'version': meta.get('version', '1.0.0')
-            })
-        except Exception as e:
-            logger.error(f"Error loading template metadata for {template_name}: {e}")
-    
-    return templates
 
 # --- Configuration ---
 # Threshold for splitting the new_theme prompt into segments (adjust as needed)
@@ -90,7 +61,6 @@ class TransferRequest(BaseModel):
     new_theme: str = Field(..., description="The new theme or topic to write about in the target style")
     provider: str = Field(..., description="API provider name")
     model: str = Field(..., description="Model name")
-    template_name: Optional[str] = Field("creative_style_extraction", description="Style extraction template to use")
     # Add other potential parameters like target_style if needed later
 
 class TransferResponse(BaseModel):
@@ -102,24 +72,6 @@ router = APIRouter(
     prefix="/transfer", 
     tags=["Style Transfer"]
 )
-
-# --- API Endpoints ---
-
-@router.get("/templates", summary="Get available style extraction templates")
-async def get_templates():
-    """Get list of available style extraction templates with metadata."""
-    try:
-        templates = get_available_templates()
-        return {
-            "status": "success",
-            "templates": templates
-        }
-    except Exception as e:
-        logger.error(f"Error fetching templates: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch templates: {str(e)}"
-        )
 
 # --- Style Transfer Instance ---
 # Create a single instance (if stateless) or manage as needed
@@ -258,8 +210,7 @@ async def perform_style_transfer(request: TransferRequest = Body(...), db: Async
                  style_guidance = await _extract_style_guidance(
                      text=request.source_text,
                      provider=request.provider,
-                     model=request.model,
-                     template_name=request.template_name or "creative_style_extraction"
+                     model=request.model
                  )
                  logger.debug(f"Extracted style_guidance (length: {len(style_guidance)})")
             except Exception as extraction_err:

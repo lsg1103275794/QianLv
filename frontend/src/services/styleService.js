@@ -11,22 +11,17 @@ export function transferStyle(data) {
     });
 }
 
-export function performStyleTransfer(inputType, newTheme, provider, model, sourceText, analysisReportId, templateName = 'creative_style_extraction') {
+export function performStyleTransfer(inputType, newTheme, provider, model, sourceText, analysisReportId) {
   const payload = {
     input_type: inputType,
     new_theme: newTheme,
     provider: provider,
     model: model,
     source_text: sourceText,
-    analysis_report_id: analysisReportId,
-    template_name: templateName
+    analysis_report_id: analysisReportId
   };
   console.log('Sending performStyleTransfer payload:', payload);
   return longRunningApiClient.post(normalizePath('transfer/'), payload);
-}
-
-export function getStyleTemplates() {
-  return apiClient.get(normalizePath('transfer/templates'));
 }
 
 export function getStyleTransferResults() {
