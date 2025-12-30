@@ -562,7 +562,12 @@ const fetchModels = async (providerName) => {
     }
   } catch (error) {
     console.error(`获取模型列表失败: ${error.message || error}`, error);
-    ElMessage.error(`无法加载 ${providerName} 的模型列表: ${error.message || '未知错误'}`);
+    // 温和的提示，不使用error级别
+    if (error.message && error.message.includes('Failed to fetch')) {
+      ElMessage.warning(`${providerName} 服务暂时无法连接，请检查服务是否运行`);
+    } else {
+      ElMessage.warning(`暂时无法获取 ${providerName} 的模型列表，请稍后重试`);
+    }
     availableModels.value = [];
   } finally {
     loadingModels.value = false;
