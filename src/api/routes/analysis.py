@@ -99,6 +99,15 @@ def load_analysis_templates() -> List[AnalysisTemplate]:
     if not templates_dir.is_dir():
         logger.warning(f"Template directory not found: {templates_dir}")
         return []
+    
+    # 模板中文名称映射（用于没有在文件中定义name的模板）
+    TEMPLATE_DISPLAY_NAMES = {
+        "creative_style_extraction": "深度创作风格提取",
+        "quick_style_extraction": "快速风格提取", 
+        "news_style_extraction": "新闻风格提取",
+        "literary_analysis": "文学分析",
+        "文学模板": "文学分析模板"
+    }
 
     try:
         file_count = 0
@@ -127,14 +136,19 @@ def load_analysis_templates() -> List[AnalysisTemplate]:
                          logger.warning(f"Skipping template file {item.name} as content is not a valid dictionary structure.")
                          continue
 
-                    # Flexible name extraction
+                    # Flexible name extraction with Chinese name mapping
                     name_keys = ['name', 'template_name', 'title']
-                    template_name = template_id # Default to ID
+                    template_name = TEMPLATE_DISPLAY_NAMES.get(template_id, template_id) # 优先使用映射的中文名
+                    
+                    # 尝试从文件中提取名称
                     for key in name_keys:
                         if isinstance(data.get(key), str) and data[key].strip():
                             template_name = data[key].strip()
                             break
                         # Check nested metadata common pattern
+                        elif isinstance(data.get('meta'), dict) and isinstance(data['meta'].get(key), str) and data['meta'][key].strip():
+                             template_name = data['meta'][key].strip()
+                             break
                         elif isinstance(data.get('metadata'), dict) and isinstance(data['metadata'].get(key), str) and data['metadata'][key].strip():
                              template_name = data['metadata'][key].strip()
                              break
@@ -146,6 +160,10 @@ def load_analysis_templates() -> List[AnalysisTemplate]:
                         if isinstance(data.get(key), str) and data[key].strip():
                             template_description = data[key].strip()
                             break
+                        # Check nested meta
+                        elif isinstance(data.get('meta'), dict) and isinstance(data['meta'].get(key), str) and data['meta'][key].strip():
+                             template_description = data['meta'][key].strip()
+                             break
                          # Check nested metadata
                         elif isinstance(data.get('metadata'), dict) and isinstance(data['metadata'].get(key), str) and data['metadata'][key].strip():
                              template_description = data['metadata'][key].strip()
@@ -158,7 +176,7 @@ def load_analysis_templates() -> List[AnalysisTemplate]:
                         description=template_description or "暂无描述", # Provide default
                         prompt_template="" # We don't load/validate prompt here for listing
                     ))
-                    logger.debug(f"Successfully processed template '{template_id}' ({template_name})")
+                    logger.debug(f"Successfully processed template '{template_id}' with name '{template_name}'")
 
                 except Exception as file_e:
                     logger.error(f"Failed to process template file {item.name}: {str(file_e)}", exc_info=True)
