@@ -1,10 +1,12 @@
 """
-API route for style transfer.
+API route for style transfer with enhanced template support.
 """
 
 from fastapi import APIRouter, HTTPException, Body, status, Depends
 from pydantic import BaseModel, Field
-from typing import Optional, Any
+from typing import Optional, Any, Dict
+import yaml
+from pathlib import Path
 
 # --- Database Imports ---
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +20,25 @@ from src.utils.cache import get_analysis_result
 from src.providers.factory import get_handler # Import the handler factory
 import json
 import re # Import re for potential splitting
+
+# --- Template Loading ---
+TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent / "config" / "prompt_templates"
+
+def load_style_extraction_template(template_name: str = "creative_style_extraction") -> Optional[Dict[str, Any]]:
+    """Load style extraction template from YAML file."""
+    template_path = TEMPLATE_DIR / f"{template_name}.yaml"
+    if not template_path.exists():
+        logger.warning(f"Style extraction template not found: {template_path}")
+        return None
+    
+    try:
+        with open(template_path, 'r', encoding='utf-8') as f:
+            template_data = yaml.safe_load(f)
+        logger.info(f"Loaded style extraction template: {template_name}")
+        return template_data
+    except Exception as e:
+        logger.error(f"Error loading style extraction template {template_name}: {e}")
+        return None
 
 # --- Configuration ---
 # Threshold for splitting the new_theme prompt into segments (adjust as needed)
@@ -57,10 +78,49 @@ router = APIRouter(
 style_transfer_processor = StyleTransfer()
 
 # --- Helper function for Stage 1: Extracting Style Guidance ---
-async def _extract_style_guidance(text: str, provider: str, model: str) -> str:
-    """Calls the LLM to extract style guidance from the given text."""
-    logger.info(f"Extracting style guidance using {provider}/{model}...")
-    guidance_prompt = f"""
+async def _extract_style_guidance(
+    text: str, 
+    provider: str, 
+    model: str,
+    use_template: bool = True,
+    template_name: str = "creative_style_extraction"
+) -> str:
+    """
+    Calls the LLM to extract style guidance from the given text.
+    
+    Args:
+        text: Source text to analyze
+        provider: AI provider name
+        model: Model name
+        use_template: Whether to use structured template (default: True)
+        template_name: Template to use (default: "creative_style_extraction")
+    
+    Returns:
+        Extracted style guidance string
+    """
+    logger.info(f"Extracting style guidance using {provider}/{model} (template: {template_name if use_template else 'legacy'})...")
+    
+    # Load template if requested
+    guidance_prompt = None
+    if use_template:
+        template_data = load_style_extraction_template(template_name)
+        if template_data and 'full_prompt_template' in template_data:
+            # Use template
+            prompt_template = template_data['full_prompt_template']
+            guidance_prompt = prompt_template.replace('{input_text}', text)
+            # Replace other placeholders
+            for key in ['instructions', 'analysis_dimensions', 'output_format']:
+                if key in template_data:
+                    placeholder = '{' + key + '}'
+                    guidance_prompt = guidance_prompt.replace(placeholder, template_data[key])
+            logger.info(f"Using structured template: {template_name}")
+        else:
+            logger.warning(f"Template {template_name} not found or invalid, falling back to legacy prompt")
+            use_template = False
+    
+    # Fallback to legacy prompt if template not used
+    if not use_template or not guidance_prompt:
+        guidance_prompt = f"""
 请仔细分析以下【文本原文】的写作风格、语气、常用句式、词汇特点、段落结构和整体氛围。
 不要进行任何模仿或创作，专注于分析。
 请将分析结果总结为一份清晰、简洁、结构化的【写作风格指南】，以便后续模型可以依据此指南进行模仿创作。
@@ -79,9 +139,10 @@ async def _extract_style_guidance(text: str, provider: str, model: str) -> str:
 
 请直接输出【写作风格指南】：
 """
+    
     try:
-        handler = get_handler(provider) # Reuse get_handler logic
-        # Check model availability (optional but recommended)
+        handler = get_handler(provider)
+        # Check model availability
         try:
             available_models = await handler.get_available_models()
             if model not in available_models:
@@ -95,10 +156,10 @@ async def _extract_style_guidance(text: str, provider: str, model: str) -> str:
         elif hasattr(handler, 'chat'):
             messages = [
                  {"role": "system", "content": "You are an expert writing style analyst. Your task is to analyze the provided text and output a concise, structured style guide based on it. Output ONLY the style guide."},
-                 {"role": "user", "content": guidance_prompt} # Pass the full prompt as user message
+                 {"role": "user", "content": guidance_prompt}
             ]
             chat_response = await handler.chat(messages=messages, model=model)
-            # Extract content from chat response (similar logic as in transfer_style)
+            # Extract content from chat response
             if isinstance(chat_response, dict) and 'content' in chat_response:
                  extracted_guidance = chat_response['content']
             elif isinstance(chat_response, object) and hasattr(chat_response, 'content'):
@@ -107,7 +168,7 @@ async def _extract_style_guidance(text: str, provider: str, model: str) -> str:
                  extracted_guidance = chat_response
             else:
                  logger.warning(f"Unexpected chat response format during guidance extraction: {type(chat_response)}")
-                 extracted_guidance = str(chat_response) # Fallback
+                 extracted_guidance = str(chat_response)
         else:
              raise NotImplementedError(f"Handler {provider} supports neither generate_text nor chat.")
 
@@ -115,14 +176,16 @@ async def _extract_style_guidance(text: str, provider: str, model: str) -> str:
             raise ValueError("LLM did not return style guidance.")
         
         logger.info("Successfully extracted style guidance.")
-        # Basic cleaning: remove potential markdown fences or leading/trailing whitespace
+        # Basic cleaning
         cleaned_guidance = extracted_guidance.strip().removeprefix('```').removesuffix('```').strip()
         return cleaned_guidance
 
     except Exception as e:
         logger.error(f"Error extracting style guidance: {e}", exc_info=True)
-        # Re-raise or handle appropriately, maybe return None or raise specific exception
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to extract style guidance: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"Failed to extract style guidance: {str(e)}"
+        )
 # --- End of helper function ---
 
 # --- API Endpoint ---
